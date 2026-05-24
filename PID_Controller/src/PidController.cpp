@@ -8,13 +8,13 @@
 PidController::PidController(const PIDConfig& cfg)
     :m_cfg(cfg)
     {
-        __ResetParams();
+        ResetParams();
     }
 
-void PidController::__ResetParams(void)
+void PidController::ResetParams(void)
 {
-    __pTerm = 0; __iTerm=0.0; __dTerm = 0.0;
-    __prev_controlSignal = 0.0; __prev_error = 0.0; __prev_state = 0.0;
+    pTerm = 0; iTerm=0.0; dTerm = 0.0;
+    prev_controlSignal = 0.0; prev_error = 0.0; prev_state = 0.0;
 }
 
 double PidController::ComputeControlSignal(
@@ -29,23 +29,23 @@ double PidController::ComputeControlSignal(
             double __error = __setpoint - __state;
             double error_pTerm = (m_cfg.spWeight_ProportionalTerm * __setpoint - __state);
 
-            __pTerm = __k * error_pTerm;
+            pTerm = __k * error_pTerm;
             
             if(m_cfg.allowDerivative)
             {
-                __dTerm = __Differentiator(__state, __k, __td);
+                dTerm = __Differentiator(__state, __k, __td);
             }
-            else __dTerm = 0.0;
+            else dTerm = 0.0;
             
 
             if(m_cfg.allowIntegral)
             {
-                __iTerm = __Integrator(__error, __k, __ti, __tt);
+                iTerm = __Integrator(__error, __k, __ti, __tt);
             }
-            else __iTerm = 0.0;
+            else iTerm = 0.0;
 
             // u_min <= control signal <= u_max 
-            controlSignal = std::clamp(__pTerm + __iTerm + __dTerm, m_cfg.u_min, m_cfg.u_max);
+            controlSignal = std::clamp(pTerm + iTerm + dTerm, m_cfg.u_min, m_cfg.u_max);
 
             return controlSignal;
         }
@@ -68,7 +68,7 @@ double PidController::__Differentiator(
             a2 = -(2*k*td)/(2*td + N*h);
         }
 
-        return a1 * __dTerm + a2*(state - __prev_state);
+        return a1 * dTerm + a2*(state - prev_state);
     }
 
 double PidController::__Integrator(
@@ -85,36 +85,19 @@ double PidController::__Integrator(
             case 1:
             {
                 // Back Calculation
-                double u_predicted = __pTerm + __dTerm + __iTerm;
+                double u_predicted = pTerm + dTerm + iTerm;
                 double e_s = std::clamp(u_predicted, m_cfg.u_min, m_cfg.u_max) - u_predicted;
-                return __iTerm + (k*h)/(2*ti)*(error + __prev_error) + (1/tt)*(e_s);
+                return iTerm + (k*h)/(2*ti)*(error + prev_error) + (1/tt)*(e_s);
             }
 
 
 
             default:
                 // Clamping
-                return std::max(__iTerm + (k*h)/(2*ti)*(error + __prev_error), m_cfg.maxIntegralValue);
+                return std::max(iTerm + (k*h)/(2*ti)*(error + prev_error), m_cfg.maxIntegralValue);
                 
             }
         }
-        return __iTerm + (k*h)/(2*ti)*(error + __prev_error);
+        return iTerm + (k*h)/(2*ti)*(error + prev_error);
     }
 
-int main()
-{
-    PIDConfig cfg;
-    cfg.spWeight_ProportionalTerm = 0.5;
-    cfg.allowDerivative = true;
-    cfg.allowIntegral = true;
-    cfg.timeStep = 0.1;
-    cfg.u_min = -10.0; cfg.u_max = 10.0;
-
-    PidController pid(cfg);
-
-    double setpoint = 1.0; double state = 0.0; double time = 0.0;
-    double k = 2.0; double ti = 1.0; double td = 0.5; double tt = 10.0;
-
-
-    return 0;
-}

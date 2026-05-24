@@ -37,22 +37,22 @@ public:
     
 
     double ComputeControlSignal(
-        const double& __setpoint, 
-        const double& __state,
-        const double& __time,
-        const double& __k, 
-        const double& __ti,
-        const double& __td,
-        const double& __tt);
+        const double& setpoint, 
+        const double& state,
+        const double& time,
+        const double& k, 
+        const double& ti,
+        const double& td,
+        const double& tt);
 private:
     
-    double __pTerm, __iTerm, __dTerm;
-    double __prev_state, __prev_controlSignal, __prev_error;
+    double pTerm, iTerm, dTerm;
+    double prev_state, prev_controlSignal, prev_error;
 
-    void __ResetParams(void);
-    void __UpdateParams(void);
-    void __displayInternalParams(void);
-    void __chechSanity(void);
+    void ResetParams(void);
+    void UpdateParams(void);
+    void displayInternalParams(void);
+    void chechSanity(void);
     
     double __Differentiator(
         const double& state, 
