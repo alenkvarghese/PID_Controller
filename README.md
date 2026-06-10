@@ -1,2 +1,3 @@
 # PID_Controller
-A small and comprehensive library for integrer and fractional order controller, with their classical, optimal and adaptive variants with tuning facilities.
+A small library for classical PID controller, with controller, tuner and closed loop performance analyzer. Adaptive and Fuzzy PID are built upon this frameowrk.
+
