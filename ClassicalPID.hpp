@@ -12,39 +12,6 @@ constexpr double g_eTol = 1e-6;
 constexpr double g_pi = 3.1416;
 
 
-// A class for storage and analysis of PID controller data. 
-// When enables its accepts the setpoint, state and Control signal from the Controller, internally.
-// It stores and can be plotted and/or be converted to csv files as well.
-class Logger
-{
-private:
-    std::vector<double> arr_controlSignal;
-    std::vector<double> arr_setpoint;
-    std::vector<double> arr_state;
-
-public:
-    Logger();
-
-    void init()
-    {
-        arr_state.resize(10000);
-        arr_setpoint.resize(10000);
-        arr_controlSignal.resize(10000);        
-    }
-
-    void logData(
-        const double& state,
-        const double& setpoint,
-        const double& control_signal);
-
-    void plotData();
-
-    void convert_to_csv();
-};
-
-
-
-
 // PerformanceMonitor analyses the real time stability and performance of the PID controller including 
 // ** The quality of gains and saturation times, presence of oscillations and instability in the system.
 // ** The reachability of setpoints and feasibility of control bounds as well as estimation of parameters like
@@ -224,13 +191,6 @@ public:
 };
 
 
-
-
-class PidTuner{};
-
-
-
-
 // Configuration Struct for PID Controller
 //
 // @param timeStep : The delta_t in discretization for simulation
@@ -262,10 +222,6 @@ struct PIDConfig
     bool f_enableMonitoring = false;
 };
 
-
-
-
-
 // Class for a classical PID controller.
 class PidController
 {
@@ -284,8 +240,6 @@ private:
     // Internal Flag
     bool f_spWeight = false, f_deriv = false, f_intgr = false;
 
-    Logger m_logger;
-
     void validateConfig()
     {
         assert(s_cfg.timeStep > g_eTol);
@@ -293,7 +247,6 @@ private:
         assert(s_cfg.spWeight>g_eTol && s_cfg.spWeight - 1.0 < g_eTol);
         f_spWeight = true;
 
-        if (s_cfg.f_enableLogging){m_logger.init();}
     };
 
 public:
@@ -365,6 +318,7 @@ public:
         const double& setpoint,
         const double& state)
     {
+        const double N = s_cfg.filterConst;
 
         const double h = s_cfg.timeStep;    /*Time Step*/
 
@@ -380,13 +334,13 @@ public:
         if (f_deriv)
         {
             /*Weights for Tustins Method*/
-            double a1 = -1.0, a2 = k*td/h;
+            double a1 = 0.0, a2 = k*td/h;
             if(s_cfg.allowFilter)
             {
                 /*First order Filter*/
-                const double N = s_cfg.filterConst;
-                a1 = (2*td - N*h)/(2*td*N + N*h);
-                a2 = -(2*k*td)/(2*td + N*h);
+                
+                a1 = (2*td - N*h)/(2*td + N*h);
+                a2 = -(2*k*td*N)/(2*td + N*h);
             }
             m_dTerm = a1*m_dTerm + a2*(state - m_prev_state);
         }
@@ -400,15 +354,14 @@ public:
                 const double u_pred = m_pTerm + m_iTerm + m_dTerm;
 
                 /*Saturation of predicted output*/
-                const double error_sat = std::clamp(u_pred, s_cfg.u_max, s_cfg.u_min) - u_pred;
-                m_iTerm += (1.0/tt)*error_sat;
+                const double error_sat = std::clamp(u_pred, s_cfg.u_min, s_cfg.u_max) - u_pred;
+                m_iTerm += (h/tt)*error_sat;
                 }
         }
 
         m_actualControlSignal = m_pTerm + m_iTerm + m_dTerm;
         m_controlSignal = std::clamp(m_actualControlSignal, s_cfg.u_min, s_cfg.u_max);
 
-        if (s_cfg.f_enableLogging){m_logger.logData(state, setpoint, m_controlSignal);}
         if (s_cfg.f_enableMonitoring){}
 
         m_prev_state = state;
