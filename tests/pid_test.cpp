@@ -1,4 +1,5 @@
 #include<iostream>
+#include<cmath>
 #include<deque>
 
 #include"../ClassicalPID.hpp"
@@ -22,7 +23,7 @@ public:
         allow_noise(allow_noise),
         delay(delay)
         {
-            for(int i = 0; i< delay; ++i) delayed_state.push_back(0.0);
+            for(int i = 0; i < delay; ++i) delayed_state.push_back(0.0);
             max_dequeSize = delay + 1;
         }
 
@@ -33,7 +34,7 @@ public:
 
         double value = (1 - dt)*delayed_state[0] + dt*controlSignal;
 
-        value += (allow_noise)*0.1*sin(1000*time);
+        value += (allow_noise)*0.01*sin(1000*time);
 
         return value;
     }
@@ -61,7 +62,7 @@ int main(void)
     PidController ctrl(cfg);
 
     // Declaring System
-    System sys(false, 0);
+    System sys(true, 0);
 
     // Initial Conditions
     double x = 0.0; double u = 0.0;
@@ -70,9 +71,9 @@ int main(void)
     ctrl.begin(x, 0.0);
 
     // Main Control Loop
-    for (int i = 0; i<500; i++)
+    for (int i = 0; i<1000; i++)
     {
-        x = sys.run(i*1000*dt, x, u);
+        x = sys.run(i*dt, x, u);
         u = ctrl.computeControlSignal(1.0, x);
         std::cout << x << "\t" << u << "\t iter " << i << '\n' << std::flush;
     }

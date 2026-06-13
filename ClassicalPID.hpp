@@ -16,11 +16,11 @@
 #define PID_CONTROLLER_H
 
 #include <iostream>
-#include <cmath>
 #include <cassert>
 #include <algorithm>
 #include <vector>
 #include<optional>
+#include<deque>
 #include<list>
 #include <stdexcept>
 
@@ -77,9 +77,17 @@ class PerformanceMonitor
 {
 private:
 
-    /* ==== Common variables ==== */
-    double time_step;  // Time Step of Controller (from config struct)
+    // Controller Parameter
+    std::deque<double> error_window;
+    double u_maxValue = 1.0e6;        
+    double u_minValue = -1.0e6;
+    unsigned int count_saturation = 0; // Count of instants of saturation at u_max
 
+    double k, td, ti, tt; 
+
+    // Simulation Parameters
+    unsigned int count_call = 0; // Count of Controller calls
+    double time_step;  
     double initial_state;
     double initial_time = 0.0;
 
@@ -89,23 +97,24 @@ private:
 
     double prev_setpoint = 0.0;
 
-    unsigned int count_call = 0; // Count of Controller calls
-
-    double k, td, ti, tt; // Controller gain
-
     std::vector<double> rise_time_arr; // time for state to rise from 10% of setpoint ro 90% of setpoiny
 
     double rise_time_y10 = 0.0; // Time when state reaches 10% of setpoint. Must be stored until rise time is calculated.
-    bool y10_recorded = false;
-
-    bool y90_recorded = false;
-
+    
     double peak_value = 0.0;
-    std::vector<double> peak_value_arr;
+    double peak_value_time = 0.0;
+
+    std::vector<double> overshootValue_arr;
+    std::vector<double> overshootTime_arr;
+    std::vector<double> settlingTime_arr;
+    
+    bool y10_recorded = false;
+    bool y90_recorded = false;
     bool peakValue_recorded = false;
+    bool steadyState_reached = false;
 
     
-    /* ==== Variables for Oscillation and Load Detection ==== */
+    // System Parameters
 
     double omega_ult; // Ultimate Frequency
     double gamma = 0.45; // Memory weightage for load history
@@ -118,7 +127,6 @@ private:
     double oscillation_amplitude = 1.0; // Amplitude of oscillation of controller
     double oscillation_limit = 10.0; // Limit of number of oscillations detected
 
-
     // time of Zero Crossing of error signal
     double prev_zero_crossing = 0.0;
 
@@ -129,12 +137,6 @@ private:
     double noise_threshold = 0.05;
 
     bool load = 0;
-
-    /* ==== Variables for Saturation ==== */
-
-    double u_maxValue = 1.0e6;        
-    double u_minValue = -1.0e6;
-    unsigned int count_saturation = 0; // Count of instants of saturation at u_max
 
 public:
 
@@ -200,17 +202,23 @@ public:
         /*Basic Params: rise time, prak time etc..*/
         double delta_setpoint = std::fabs(setpoint - prev_setpoint);
 
-        // Change in setpoint must be atlest 5%
+        // Change in setpoint must be atlest 5% to be counted as a change in setpoint.
+        // Once setpoint change is encountered, all values from previous setpoint are discarded.
         if (delta_setpoint/std::fabs(prev_setpoint) > 0.05 and prev_setpoint > 0.0)
         {
             if(!y10_recorded or !y90_recorded)
             {
                 rise_time_arr.push_back(0);
-                peak_value_arr.push_back(0);
+                overshootValue_arr.push_back(0);
+                overshootTime_arr.push_back(0);
+                settlingTime_arr.push_back(0);
             }
             y10_recorded = false;
             y90_recorded = false;
             peakValue_recorded = false;
+            steadyState_reached = false;
+
+            error_window.clear();
         }
 
         if(state >= 0.1*setpoint and !y10_recorded)
@@ -218,6 +226,8 @@ public:
             y10_recorded = true;
             rise_time_y10 = initial_time + count_call*time_step;
         }
+
+
         if(state >= 0.9*setpoint and !y90_recorded)
         {
             y90_recorded = true;
@@ -227,7 +237,30 @@ public:
         if(!peakValue_recorded)
         {
             peak_value = std::max(peak_value, state);
+            peak_value_time = count_call*time_step;
+        }
 
+        error_window.push_back(std::fabs(error));
+        if(error_window.size() > 5)
+        {
+            error_window.pop_front();
+
+            if(!steadyState_reached)
+            {
+                double sum_err = 0.0;
+                for(int i = 0; i < 5; i++) sum_err += error_window.at(i);
+
+                // Error must be with 5% or reference vales for 
+                if (sum_err/(5*setpoint) <= 0.05)
+                {
+                    steadyState_reached = true;
+                    peakValue_recorded = true;
+
+                    overshootValue_arr.push_back(peak_value/setpoint);
+                    overshootTime_arr.push_back(peak_value_time);
+                    settlingTime_arr.push_back((count_call - 5)*time_step);
+                }
+            }
         }
 
         /* Detection of Actuator Saturation */
@@ -237,9 +270,10 @@ public:
         // avoid false positives during setpoint changes and initial transients.
         count_saturation += (control_signal <= u_minValue) or (control_signal >= u_maxValue);
 
-        if ((count_call > 1.0/time_step) and (count_saturation > 0.075*count_call))
+        if ((count_call > 1.0/time_step) and (count_saturation > 0.1*count_call))
         {   
-            std::cerr<<"\n Warning! Saturation Detected \n "<<std::endl;   
+            std::cerr<<"\n Warning! Saturation Detected \n "<<std::endl; 
+            count_saturation = 0;
         }
 
 
@@ -304,11 +338,16 @@ public:
         std::cout<<"\t \t Performance Analysis"<< std::endl;
         std::cout<<"======================================================="<<std::endl;
 
-        for(int i = 0; i <= rise_time_arr.size(); ++i)
+        for(unsigned long int i = 0; i < rise_time_arr.size(); ++i)
         {
             std::cout<<"Setpoint change  #"<<i+1<<std::endl;
-            std::cout<<"Rise Time:       "<<rise_time_arr.at(i)<<" sec"<<std::endl;
-            std::cout<<"Peak Value:      "<<peak_value<<std::endl;
+
+            std::cout<<"Rise Time       "<< rise_time_arr.at(i)<<" sec"<<std::endl;
+
+            std::cout<<"Overshoot       "<<overshootValue_arr.at(i)<<" % \t"<<
+                "at "<<overshootTime_arr.at(i)<< " sec"<<std::endl;
+
+            std::cout<<"Settling Time:  "<<settlingTime_arr.at(i)<< " sec"<<std::endl;
         }
     }
 
